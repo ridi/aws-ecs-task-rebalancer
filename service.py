@@ -48,15 +48,35 @@ def _get_container_instance(ec2_instance_id, cluster_name=None):
 
     paginator = ecs_client.get_paginator('list_container_instances')
     pages = paginator.paginate(cluster=cluster_name)
-
     for page in pages:
         container_instances = page['containerInstanceArns']
         container_resp = ecs_client.describe_container_instances(cluster=cluster_name,
                                                                  containerInstances=container_instances)
+
         for container_instance in container_resp['containerInstances']:
             if container_instance['ec2InstanceId'] == ec2_instance_id:
                 return container_instance
     return None
+
+
+def _iter_subscriptions(topic_arn: str):
+    next_token = None
+    while True:
+        kwargs = {
+            'TopicArn': topic_arn
+        }
+
+        if next_token:
+            kwargs['NextToken'] = next_token
+
+        response = sns_client.list_subscriptions_by_topic(**kwargs)
+        for subscription in response['Subscriptions']:
+            yield subscription
+
+        if 'NextToken' not in response:
+            break
+
+        next_token = response['NextToken']
 
 
 def _get_services(cluster_name):
@@ -101,9 +121,8 @@ def handler(event, context):
     logger.info(f'ContainerInstance: {container_instance}')
     if not container_instance:
         topic_arn = event['Records'][0]['Sns']['TopicArn']
-        response = sns_client.list_subscriptions()
-        for key in response['Subscriptions']:
-            if key['TopicArn'] == topic_arn and key['Protocol'] == 'lambda':
+        for subscription in _iter_subscriptions(topic_arn):
+            if subscription['Protocol'] == 'lambda':
                 if 'retry_count' not in message:
                     message['retry_count'] = 1
                 else:
@@ -140,6 +159,7 @@ def handler(event, context):
             continue
         if service_name in IGNORE_SERVICES:
             logger.info(f'Skip: {service_name} in IGNORE_SERVICES')
+            continue
         deployments = service['deployments']
         if len(deployments) >= 2:
             logger.error(f'Now {service["serviceName"]} Deploying... Exit')
