@@ -44,7 +44,7 @@ resource "aws_iam_policy" "ecs_task_rebalancer_lambda_excution_policy" {
                 "ecs:ListTasks",
                 "ecs:DescribeTasks",
                 "sns:Publish",
-                "sns:ListSubscriptions"
+                "sns:ListSubscriptionsByTopic"
             ],
             "Resource": "*"
         }
